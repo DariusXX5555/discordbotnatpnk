@@ -6,7 +6,7 @@ import os
 import random
 from config import BOT_TOKEN, FFMPEG_OPTIONS
 from music_player import MusicPlayer
-from utils import is_admin, setup_logging
+from utils import is_admin, setup_logging, create_error_embed, create_info_embed, create_success_embed
 
 # Setup logging
 setup_logging()
@@ -292,6 +292,62 @@ async def queue(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f'Error in queue command: {e}')
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="songs", description="List available music in the bot's library")
+async def songs(interaction: discord.Interaction):
+    """List available local music files"""
+    try:
+        # Check if user has admin permissions
+        if not is_admin(interaction.user):
+            embed = create_error_embed(
+                "Access Denied",
+                "Only administrators can use this command."
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Get music player for this guild
+        if interaction.guild and interaction.guild.voice_client:
+            music_player = music_players.get(interaction.guild.id)
+            if music_player:
+                available_songs = music_player.get_available_songs()
+            else:
+                from music_library import MusicLibrary
+                library = MusicLibrary()
+                available_songs = library.get_music_list()
+        else:
+            from music_library import MusicLibrary
+            library = MusicLibrary()
+            available_songs = library.get_music_list()
+        
+        if not available_songs:
+            embed = create_info_embed(
+                "Music Library",
+                "No songs available in the music library.\n\n" +
+                "**To add songs:**\n" +
+                "1. Add audio files (.mp3, .wav, .m4a, .ogg, .flac) to the music folder\n" +
+                "2. Use the song name in the `/music` command\n" +
+                "3. Example: `/music Amazing Grace`"
+            )
+        else:
+            song_list = "\n".join([f"• {song}" for song in available_songs[:20]])  # Limit to 20 songs
+            if len(available_songs) > 20:
+                song_list += f"\n... and {len(available_songs) - 20} more songs"
+            
+            embed = create_info_embed(
+                f"Available Songs ({len(available_songs)})",
+                song_list + "\n\n**Usage:** `/music [song name]`"
+            )
+        
+        await interaction.response.send_message(embed=embed)
+        
+    except Exception as e:
+        logger.error(f'Error in songs command: {e}')
+        embed = create_error_embed(
+            "Error",
+            "Something went wrong while getting the song list. Please try again."
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="truth", description="Discover wisdom and encouragement")
 async def truth(interaction: discord.Interaction):

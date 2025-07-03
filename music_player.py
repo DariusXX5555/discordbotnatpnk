@@ -2,8 +2,10 @@ import discord
 import asyncio
 import yt_dlp
 import logging
+import os
 from typing import Dict, List, Optional, Any
 from config import FFMPEG_OPTIONS, YDL_OPTIONS
+from music_library import MusicLibrary
 
 logger = logging.getLogger(__name__)
 
@@ -16,65 +18,102 @@ class MusicPlayer:
         self.current_song: Optional[Dict[str, Any]] = None
         self.is_playing_flag = False
         self.skip_flag = False
+        self.music_library = MusicLibrary()
         
-    async def add_to_queue(self, url: str) -> Dict[str, Any]:
-        """Add a song to the queue"""
+    async def add_to_queue(self, input_str: str) -> Dict[str, Any]:
+        """Add a song to the queue (local file name or YouTube URL)"""
         try:
-            # Extract video info
-            with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-                try:
-                    info = ydl.extract_info(url, download=False)
-                    
-                    # Handle playlists
-                    if 'entries' in info:
-                        if info['entries']:
-                            # Take the first video from playlist
-                            info = info['entries'][0]
-                        else:
-                            return {'success': False, 'error': 'Empty playlist'}
-                    
-                    # Check duration - limit to 10 minutes for testing
-                    duration = info.get('duration', 0)
-                    if duration > 600:  # 10 minutes
-                        return {'success': False, 'error': 'Song too long (max 10 minutes for testing)'}
-                    
-                    # Extract required information
-                    song_info = {
-                        'title': info.get('title', 'Unknown Title'),
-                        'url': info.get('url', ''),
-                        'webpage_url': info.get('webpage_url', url),
-                        'duration': duration,
-                        'uploader': info.get('uploader', 'Unknown'),
-                    }
-                    
-                    # Clear queue and add only this song for single playback
-                    self.queue.clear()
-                    self.queue.append(song_info)
-                    
-                    # If nothing is playing, start playing
-                    if not self.is_playing_flag:
-                        await self._play_next()
-                        return {'success': True, 'title': song_info['title'], 'position': 0}
-                    else:
-                        # Stop current and play new
-                        self.skip_flag = True
-                        self.voice_client.stop()
-                        return {'success': True, 'title': song_info['title'], 'position': 0}
-                    
-                except yt_dlp.utils.DownloadError as e:
-                    error_msg = str(e)
-                    if "Sign in to confirm" in error_msg:
-                        return {'success': False, 'error': 'YouTube blocked this request. Try a different video or use a direct link.'}
-                    elif "Video unavailable" in error_msg:
-                        return {'success': False, 'error': 'Video is unavailable or private'}
-                    elif "blocked" in error_msg.lower():
-                        return {'success': False, 'error': 'Video is blocked in your region'}
-                    else:
-                        return {'success': False, 'error': f'YouTube access issue: Try a different video'}
-                        
+            # Check if it's a local file first
+            local_path = self.music_library.get_file_path(input_str)
+            if local_path and os.path.exists(local_path):
+                return await self._add_local_file(input_str, local_path)
+            
+            # Otherwise, try as YouTube URL
+            return await self._add_youtube_url(input_str)
+                
         except Exception as e:
-            logger.error(f'Error adding to queue: {e}')
+            logger.error(f"Error adding song to queue: {str(e)}")
             return {'success': False, 'error': f'Unexpected error: {str(e)}'}
+    
+    async def _add_local_file(self, song_name: str, file_path: str) -> Dict[str, Any]:
+        """Add a local file to the queue"""
+        song_info = {
+            'title': song_name,
+            'url': file_path,
+            'webpage_url': file_path,
+            'duration': 0,  # Could be calculated with mutagen library
+            'uploader': 'Local Library',
+            'is_local': True
+        }
+        
+        # Clear queue and add only this song for single playback
+        self.queue.clear()
+        self.queue.append(song_info)
+        
+        # If nothing is playing, start playing
+        if not self.is_playing_flag:
+            await self._play_next()
+            return {'success': True, 'title': song_info['title'], 'position': 0}
+        else:
+            # Stop current and play new
+            self.skip_flag = True
+            self.voice_client.stop()
+            return {'success': True, 'title': song_info['title'], 'position': 0}
+    
+    async def _add_youtube_url(self, url: str) -> Dict[str, Any]:
+        """Add a YouTube URL to the queue"""
+        # Extract video info
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            try:
+                info = ydl.extract_info(url, download=False)
+                
+                # Handle playlists
+                if 'entries' in info:
+                    if info['entries']:
+                        # Take the first video from playlist
+                        info = info['entries'][0]
+                    else:
+                        return {'success': False, 'error': 'Empty playlist'}
+                
+                # Check duration - limit to 10 minutes for testing
+                duration = info.get('duration', 0)
+                if duration > 600:  # 10 minutes
+                    return {'success': False, 'error': 'Song too long (max 10 minutes for testing)'}
+                
+                # Extract required information
+                song_info = {
+                    'title': info.get('title', 'Unknown Title'),
+                    'url': info.get('url', ''),
+                    'webpage_url': info.get('webpage_url', url),
+                    'duration': duration,
+                    'uploader': info.get('uploader', 'Unknown'),
+                    'is_local': False
+                }
+                
+                # Clear queue and add only this song for single playback
+                self.queue.clear()
+                self.queue.append(song_info)
+                
+                # If nothing is playing, start playing
+                if not self.is_playing_flag:
+                    await self._play_next()
+                    return {'success': True, 'title': song_info['title'], 'position': 0}
+                else:
+                    # Stop current and play new
+                    self.skip_flag = True
+                    self.voice_client.stop()
+                    return {'success': True, 'title': song_info['title'], 'position': 0}
+                
+            except yt_dlp.utils.DownloadError as e:
+                error_msg = str(e)
+                if "Sign in to confirm" in error_msg:
+                    return {'success': False, 'error': 'YouTube blocked this request. Try a different video or use a direct link.'}
+                elif "Video unavailable" in error_msg:
+                    return {'success': False, 'error': 'Video is unavailable or private'}
+                elif "blocked" in error_msg.lower():
+                    return {'success': False, 'error': 'Video is blocked in your region'}
+                else:
+                    return {'success': False, 'error': f'YouTube access issue: Try a different video'}
     
     async def _play_next(self):
         """Play the next song in the queue"""
@@ -163,6 +202,14 @@ class MusicPlayer:
             'current': self.current_song['title'] if self.current_song else None,
             'upcoming': [song['title'] for song in self.queue]
         }
+    
+    def get_available_songs(self) -> List[str]:
+        """Get list of available local songs"""
+        return self.music_library.get_music_list()
+    
+    def refresh_music_library(self):
+        """Refresh the music library"""
+        self.music_library.refresh_library()
     
     async def cleanup(self):
         """Cleanup the music player"""
