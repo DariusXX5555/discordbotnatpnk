@@ -3,9 +3,7 @@ nixPkgs = ["ffmpeg"]
 
 [phases.install]
 dependsOn = ["setup"]
-
-[phases.build]
-dependsOn = ["install"]
+cmds = ["pip install -e ."]
 
 [start]
 cmd = "python main.py"
