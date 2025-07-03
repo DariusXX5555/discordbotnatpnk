@@ -5,8 +5,8 @@ BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN', 'your_bot_token_here')
 
 # FFmpeg options for audio playback
 FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+    'options': '-vn -filter:a "volume=0.5"'
 }
 
 # YouTube-DL options

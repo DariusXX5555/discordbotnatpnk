@@ -147,20 +147,34 @@ class MusicPlayer:
                         await self._play_next()
                         return
                     
-                    # Create audio source
-                    audio_source = discord.FFmpegPCMAudio(
-                        stream_url,
-                        **FFMPEG_OPTIONS
-                    )
-                    
-                    # Play audio
-                    self.voice_client.play(
-                        audio_source,
-                        after=lambda e: asyncio.run_coroutine_threadsafe(
-                            self._after_playing(e), 
-                            self.voice_client.loop
+                    # Create audio source with proper error handling
+                    try:
+                        # For local files, use direct path
+                        if self.current_song.get('is_local', False):
+                            audio_source = discord.FFmpegPCMAudio(
+                                self.current_song['url'],
+                                options='-vn'
+                            )
+                        else:
+                            # For streaming URLs, use full options
+                            audio_source = discord.FFmpegPCMAudio(
+                                stream_url,
+                                **FFMPEG_OPTIONS
+                            )
+                        
+                        # Play audio
+                        self.voice_client.play(
+                            audio_source,
+                            after=lambda e: asyncio.run_coroutine_threadsafe(
+                                self._after_playing(e), 
+                                self.voice_client.loop
+                            )
                         )
-                    )
+                        
+                    except Exception as audio_error:
+                        logger.error(f'Error creating audio source: {audio_error}')
+                        await self._play_next()
+                        return
                     
                     logger.info(f'Started playing: {self.current_song["title"]}')
                     
