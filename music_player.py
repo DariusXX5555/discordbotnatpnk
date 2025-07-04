@@ -153,13 +153,16 @@ class MusicPlayer:
                         if self.current_song.get('is_local', False):
                             audio_source = discord.FFmpegPCMAudio(
                                 self.current_song['url'],
+                                executable='/usr/bin/ffmpeg',
                                 options='-vn'
                             )
                         else:
                             # For streaming URLs, use full options
+                            ffmpeg_opts = dict(FFMPEG_OPTIONS)
+                            ffmpeg_opts['executable'] = '/usr/bin/ffmpeg'
                             audio_source = discord.FFmpegPCMAudio(
                                 stream_url,
-                                **FFMPEG_OPTIONS
+                                **ffmpeg_opts
                             )
                         
                         # Play audio
