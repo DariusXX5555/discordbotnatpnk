@@ -9,7 +9,7 @@ FFMPEG_OPTIONS = {
     'options': '-vn -filter:a "volume=0.5"'
 }
 
-# YouTube-DL options
+# YouTube-DL options with cookie support
 YDL_OPTIONS = {
     'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'extractaudio': True,
@@ -24,7 +24,7 @@ YDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'cookiefile': None,
+    'cookiefile': 'cookies.txt',  # Use cookies if available
     'extractor_args': {
         'youtube': {
             'player_client': ['android_music', 'android', 'web'],
