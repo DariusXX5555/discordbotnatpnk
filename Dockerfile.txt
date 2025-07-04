@@ -11,8 +11,8 @@ WORKDIR /app
 # Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with explicit python3
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Copy all project files
 COPY . .
@@ -20,5 +20,5 @@ COPY . .
 # Set environment variable for FFmpeg path
 ENV FFMPEG_EXECUTABLE=/usr/bin/ffmpeg
 
-# Command to run the bot
-CMD ["python", "main.py"]
+# Command to run the bot with explicit python3
+CMD ["python3", "main.py"]
