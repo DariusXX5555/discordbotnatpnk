@@ -12,27 +12,31 @@ logger = logging.getLogger(__name__)
 
 def find_ffmpeg():
     """Find FFmpeg executable on the system"""
-    # Try our local installation first
-    local_ffmpeg = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
-    if os.path.exists(local_ffmpeg):
-        return local_ffmpeg
-    
-    # Try common locations
-    ffmpeg_paths = [
-        '/usr/bin/ffmpeg',           # Standard Linux
-        '/usr/local/bin/ffmpeg',     # Manual install
-        'ffmpeg',                    # PATH
-        '/bin/ffmpeg',               # Some distros
-        '/opt/ffmpeg/bin/ffmpeg',    # Custom install
+    # Check manual installation in ffmpeg-bin folder (for GitHub upload)
+    manual_paths = [
+        './ffmpeg-bin/ffmpeg.exe',  # Windows
+        './ffmpeg-bin/ffmpeg',      # Linux
+        './bin/ffmpeg'              # Local installation
     ]
+    
+    for path in manual_paths:
+        if os.path.exists(path):
+            return path
     
     # Try shutil.which first (checks PATH)
     ffmpeg_path = shutil.which('ffmpeg')
     if ffmpeg_path:
         return ffmpeg_path
     
-    # Try common paths
-    for path in ffmpeg_paths:
+    # Try common system locations
+    system_paths = [
+        '/usr/bin/ffmpeg',           # Standard Linux
+        '/usr/local/bin/ffmpeg',     # Manual install
+        '/bin/ffmpeg',               # Some distros
+        '/opt/ffmpeg/bin/ffmpeg',    # Custom install
+    ]
+    
+    for path in system_paths:
         if os.path.exists(path):
             return path
     
