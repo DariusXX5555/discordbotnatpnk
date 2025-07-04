@@ -3,11 +3,44 @@ import asyncio
 import yt_dlp
 import logging
 import os
+import shutil
 from typing import Dict, List, Optional, Any
 from config import FFMPEG_OPTIONS, YDL_OPTIONS
 from music_library import MusicLibrary
 
 logger = logging.getLogger(__name__)
+
+def find_ffmpeg():
+    """Find FFmpeg executable on the system"""
+    # Try common locations
+    ffmpeg_paths = [
+        '/usr/bin/ffmpeg',           # Standard Linux
+        '/usr/local/bin/ffmpeg',     # Manual install
+        'ffmpeg',                    # PATH
+        '/bin/ffmpeg',               # Some distros
+        '/opt/ffmpeg/bin/ffmpeg',    # Custom install
+    ]
+    
+    # Try shutil.which first (checks PATH)
+    ffmpeg_path = shutil.which('ffmpeg')
+    if ffmpeg_path:
+        return ffmpeg_path
+    
+    # Try common paths
+    for path in ffmpeg_paths:
+        if os.path.exists(path):
+            return path
+    
+    # Try to find in /nix/store (for Replit/NixOS)
+    if os.path.exists('/nix/store'):
+        for root, dirs, files in os.walk('/nix/store'):
+            if 'ffmpeg' in files and 'bin' in root:
+                candidate = os.path.join(root, 'ffmpeg')
+                if os.path.exists(candidate):
+                    return candidate
+    
+    # Default fallback
+    return 'ffmpeg'
 
 class MusicPlayer:
     """Handles music playback for a Discord voice client"""
@@ -149,17 +182,20 @@ class MusicPlayer:
                     
                     # Create audio source with proper error handling
                     try:
+                        # Find FFmpeg executable
+                        ffmpeg_executable = find_ffmpeg()
+                        
                         # For local files, use direct path
                         if self.current_song.get('is_local', False):
                             audio_source = discord.FFmpegPCMAudio(
                                 self.current_song['url'],
-                                executable='/nix/store/3zc5jbvqzrn8zmva4fx5p0nh4yy03wk4-ffmpeg-6.1.1-bin/bin/ffmpeg',
+                                executable=ffmpeg_executable,
                                 options='-vn'
                             )
                         else:
                             # For streaming URLs, use full options
                             ffmpeg_opts = dict(FFMPEG_OPTIONS)
-                            ffmpeg_opts['executable'] = '/nix/store/3zc5jbvqzrn8zmva4fx5p0nh4yy03wk4-ffmpeg-6.1.1-bin/bin/ffmpeg'
+                            ffmpeg_opts['executable'] = ffmpeg_executable
                             audio_source = discord.FFmpegPCMAudio(
                                 stream_url,
                                 **ffmpeg_opts
