@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 def find_ffmpeg():
     """Find FFmpeg executable on the system"""
+    # Try our local installation first
+    local_ffmpeg = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
+    if os.path.exists(local_ffmpeg):
+        return local_ffmpeg
+    
     # Try common locations
     ffmpeg_paths = [
         '/usr/bin/ffmpeg',           # Standard Linux
