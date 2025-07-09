@@ -87,6 +87,7 @@ async def on_guild_join(guild):
 async def on_guild_remove(guild):
     """Called when bot leaves a guild"""
     logger.info(f'Left guild: {guild.name} ({guild.id})')
+    # Cleanup music player
     if guild.id in music_players:
         await music_players[guild.id].cleanup()
         del music_players[guild.id]
@@ -95,193 +96,427 @@ async def on_guild_remove(guild):
 async def join(interaction: discord.Interaction, channel: str):
     """Join a voice channel"""
     try:
+        # Check if user is admin
         if not is_admin(interaction.user):
             await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
             return
+
+        # Defer response as voice operations can take time
         await interaction.response.defer()
-        voice_channel = discord.utils.get(interaction.guild.voice_channels, name=channel)
+
+        # Find the voice channel
+        voice_channel = None
+        for ch in interaction.guild.voice_channels:
+            if ch.name.lower() == channel.lower():
+                voice_channel = ch
+                break
+
         if not voice_channel:
             await interaction.followup.send(f"❌ Voice channel '{channel}' not found.")
             return
+
+        # Check if bot is already in a voice channel
         if interaction.guild.voice_client:
             if interaction.guild.voice_client.channel.id == voice_channel.id:
                 await interaction.followup.send(f"✅ Already connected to {voice_channel.name}")
                 return
             else:
                 await interaction.guild.voice_client.disconnect()
-        voice_client = await voice_channel.connect(timeout=60.0, reconnect=True)
-        logger.info(f'Connected to voice channel: {voice_channel.name} in guild: {interaction.guild.name}')
-        music_players[interaction.guild.id] = music_players.get(interaction.guild.id, MusicPlayer(voice_client))
-        music_players[interaction.guild.id].voice_client = voice_client
-        await interaction.followup.send(f"✅ Connected to {voice_channel.name}")
-    except asyncio.TimeoutError:
-        await interaction.followup.send("❌ Connection timed out."
-                                    " This may be due to network restrictions. The bot works best self-hosted or on a VPS.")
-        logger.error(f'Connection timeout for voice channel: {channel}')
+
+        # Connect to voice channel
+        try:
+            voice_client = await voice_channel.connect(timeout=60.0, reconnect=True)
+            logger.info(f'Connected to voice channel: {voice_channel.name} in guild: {interaction.guild.name}')
+            
+            # Initialize music player for this guild
+            if interaction.guild.id not in music_players:
+                music_players[interaction.guild.id] = MusicPlayer(voice_client)
+            else:
+                music_players[interaction.guild.id].voice_client = voice_client
+
+            await interaction.followup.send(f"✅ Connected to {voice_channel.name}")
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("❌ Connection timed out. This may be due to network restrictions in the hosting environment. The bot works best when self-hosted or on a VPS.")
+            logger.error(f'Connection timeout for voice channel: {voice_channel.name}')
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to connect to voice channel. Error: {str(e)}")
+            logger.error(f'Failed to connect to voice channel: {e}')
+
     except Exception as e:
         logger.error(f'Error in join command: {e}')
-        await interaction.followup.send(f"❌ Failed to connect: {e}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
 
 @bot.tree.command(name="leave", description="Leave the current voice channel")
 async def leave(interaction: discord.Interaction):
     """Leave the current voice channel"""
-    if not is_admin(interaction.user):
-        await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
-        return
-    vc = interaction.guild.voice_client
-    if not vc:
-        await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
-        return
-    if interaction.guild.id in music_players:
-        await music_players[interaction.guild.id].cleanup()
-        del music_players[interaction.guild.id]
-    channel_name = vc.channel.name
-    await vc.disconnect()
-    await interaction.response.send_message(f"✅ Disconnected from {channel_name}")
-    logger.info(f'Disconnected from voice channel: {channel_name}')
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
+            return
+
+        # Cleanup music player
+        if interaction.guild.id in music_players:
+            await music_players[interaction.guild.id].cleanup()
+            del music_players[interaction.guild.id]
+
+        # Disconnect from voice channel
+        channel_name = interaction.guild.voice_client.channel.name
+        await interaction.guild.voice_client.disconnect()
+        
+        await interaction.response.send_message(f"✅ Disconnected from {channel_name}")
+        logger.info(f'Disconnected from voice channel: {channel_name} in guild: {interaction.guild.name}')
+
+    except Exception as e:
+        logger.error(f'Error in leave command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 @bot.tree.command(name="music", description="Play music from YouTube")
 async def music(interaction: discord.Interaction, link: str):
     """Play music from YouTube"""
-    if not is_admin(interaction.user):
-        await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
-        return
-    vc = interaction.guild.voice_client
-    if not vc:
-        await interaction.response.send_message("❌ Bot is not connected to a voice channel. Use `/join` first.", ephemeral=True)
-        return
-    await interaction.response.defer()
-    player = music_players.setdefault(interaction.guild.id, MusicPlayer(vc))
-    player.voice_client = vc
-    result = await player.add_to_queue(link)
-    if result['success']:
-        msg = (f"🎵 Now playing: **{result['title']}**" if result['position']==0
-               else f"📝 Added to queue (position {result['position']}): **{result['title']}**")
-        await interaction.followup.send(msg)
-    else:
-        await interaction.followup.send(f"❌ Error: {result['error']}")
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel. Use `/join` first.", ephemeral=True)
+            return
+
+        # Defer response as YouTube processing can take time
+        await interaction.response.defer()
+
+        # Get or create music player
+        if interaction.guild.id not in music_players:
+            music_players[interaction.guild.id] = MusicPlayer(interaction.guild.voice_client)
+
+        player = music_players[interaction.guild.id]
+
+        # Add to queue and play
+        result = await player.add_to_queue(link)
+        
+        if result['success']:
+            if result['position'] == 0:
+                await interaction.followup.send(f"🎵 Now playing: **{result['title']}**")
+            else:
+                await interaction.followup.send(f"📝 Added to queue (position {result['position']}): **{result['title']}**")
+        else:
+            await interaction.followup.send(f"❌ Error: {result['error']}")
+
+    except Exception as e:
+        logger.error(f'Error in music command: {e}')
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
 
 @bot.tree.command(name="skip", description="Skip the current song")
 async def skip(interaction: discord.Interaction):
     """Skip the current song"""
-    if not is_admin(interaction.user):
-        await interaction.response.send_message("❌ You need administrator permissions.", ephemeral=True)
-        return
-    vc = interaction.guild.voice_client
-    if not vc or interaction.guild.id not in music_players:
-        await interaction.response.send_message("❌ No music player found.", ephemeral=True)
-        return
-    player = music_players[interaction.guild.id]
-    if player.is_playing():
-        player.skip()
-        await interaction.response.send_message("⏭️ Skipped current song")
-    else:
-        await interaction.response.send_message("❌ No song is currently playing", ephemeral=True)
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
+            return
+
+        # Get music player
+        if interaction.guild.id not in music_players:
+            await interaction.response.send_message("❌ No music player found.", ephemeral=True)
+            return
+
+        player = music_players[interaction.guild.id]
+        
+        if player.is_playing():
+            player.skip()
+            await interaction.response.send_message("⏭️ Skipped current song")
+        else:
+            await interaction.response.send_message("❌ No song is currently playing", ephemeral=True)
+
+    except Exception as e:
+        logger.error(f'Error in skip command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="stop", description="Stop music and clear queue")
+async def stop(interaction: discord.Interaction):
+    """Stop music and clear queue"""
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
+            return
+
+        # Get music player
+        if interaction.guild.id not in music_players:
+            await interaction.response.send_message("❌ No music player found.", ephemeral=True)
+            return
+
+        player = music_players[interaction.guild.id]
+        await player.stop()
+        await interaction.response.send_message("⏹️ Stopped music and cleared queue")
+
+    except Exception as e:
+        logger.error(f'Error in stop command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 @bot.tree.command(name="queue", description="Show the current music queue")
 async def queue(interaction: discord.Interaction):
     """Show the current music queue"""
-    vc = interaction.guild.voice_client
-    if not vc or interaction.guild.id not in music_players:
-        await interaction.response.send_message("❌ Bot is not connected or no music player.", ephemeral=True)
-        return
-    queue_info = music_players[interaction.guild.id].get_queue_info()
-    if not queue_info:
-        await interaction.response.send_message("📝 Queue is empty", ephemeral=True)
-        return
-    embed = discord.Embed(title="🎵 Music Queue", color=0x3498db)
-    if queue_info['current']:
-        embed.add_field(name="Now Playing", value=f"**{queue_info['current']}**", inline=False)
-    if queue_info['upcoming']:
-        upcoming_list = [f"{i}. {song}" for i,song in enumerate(queue_info['upcoming'][:10],1)]
-        embed.add_field(name="Up Next", value="\n".join(upcoming_list), inline=False)
-        if len(queue_info['upcoming'])>10:
-            embed.add_field(name="", value=f"... and {len(queue_info['upcoming'])-10} more songs", inline=False)
-    await interaction.response.send_message(embed=embed)
+    try:
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
+            return
 
-@bot.tree.command(name="songs", description="List available music in the bot's library")
-async def songs(interaction: discord.Interaction):
-    """List available local music files"""
-    if not is_admin(interaction.user):
-        await interaction.response.send_message(embed=create_error_embed("Access Denied",
-            "Only administrators can use this command."), ephemeral=True)
-        return
-    from music_library import MusicLibrary
-    library = MusicLibrary()
-    available_songs = music_players.get(interaction.guild.id, library).get_available_songs()
-    if not available_songs:
-        embed = create_info_embed("Music Library",
-            "No songs available. Add files to music folder and use `/music [name]`.")
-    else:
-        listing = "\n".join(f"• {s}" for s in available_songs[:20]) +
-                  (f"\n... and {len(available_songs)-20} more" if len(available_songs)>20 else "")
-        embed = create_info_embed(f"Available Songs ({len(available_songs)})", listing+"\nUsage: /music [song name]")
-    await interaction.response.send_message(embed=embed)
+        # Get music player
+        if interaction.guild.id not in music_players:
+            await interaction.response.send_message("❌ No music player found.", ephemeral=True)
+            return
 
-@bot.tree.command(name="truth", description="Discover wisdom and encouragement")
+        player = music_players[interaction.guild.id]
+        queue_info = player.get_queue()
+        
+        if not queue_info['queue'] and not queue_info['current']:
+            await interaction.response.send_message("📝 Queue is empty")
+            return
+
+        embed = discord.Embed(title="🎵 Music Queue", color=0x00ff00)
+        
+        if queue_info['current']:
+            embed.add_field(name="Now Playing", value=queue_info['current'], inline=False)
+        
+        if queue_info['queue']:
+            queue_text = ""
+            for i, song in enumerate(queue_info['queue'][:10], 1):  # Show first 10 songs
+                queue_text += f"{i}. {song}\n"
+            
+            if len(queue_info['queue']) > 10:
+                queue_text += f"... and {len(queue_info['queue']) - 10} more"
+            
+            embed.add_field(name="Up Next", value=queue_text, inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+
+    except Exception as e:
+        logger.error(f'Error in queue command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="mute", description="Server mute all users in the bot's voice channel")
+async def mute(interaction: discord.Interaction):
+    """Server mute all users in the bot's current voice channel"""
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
+            return
+
+        # Defer response as muting operations can take time
+        await interaction.response.defer()
+
+        # Get the voice channel the bot is in
+        voice_channel = interaction.guild.voice_client.channel
+        
+        # Get all members in the voice channel (excluding bots)
+        members_to_mute = [member for member in voice_channel.members if not member.bot]
+        
+        if not members_to_mute:
+            await interaction.followup.send("❌ No users to mute in the voice channel.")
+            return
+
+        # Mute all members
+        muted_count = 0
+        failed_mutes = []
+        
+        for member in members_to_mute:
+            try:
+                if not member.voice.mute:  # Only mute if not already muted
+                    await member.edit(mute=True)
+                    muted_count += 1
+                    logger.info(f'Muted user: {member.name} in guild: {interaction.guild.name}')
+            except discord.Forbidden:
+                failed_mutes.append(member.name)
+                logger.warning(f'Failed to mute user: {member.name} - insufficient permissions')
+            except Exception as e:
+                failed_mutes.append(member.name)
+                logger.error(f'Error muting user {member.name}: {e}')
+
+        # Send response
+        if muted_count > 0:
+            message = f"🔇 Successfully muted {muted_count} user(s) in {voice_channel.name}"
+            if failed_mutes:
+                message += f"\n⚠️ Failed to mute: {', '.join(failed_mutes)}"
+            await interaction.followup.send(message)
+        else:
+            if failed_mutes:
+                await interaction.followup.send(f"❌ Failed to mute any users. Check bot permissions.")
+            else:
+                await interaction.followup.send("ℹ️ All users in the voice channel are already muted.")
+
+    except Exception as e:
+        logger.error(f'Error in mute command: {e}')
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
+
+@bot.tree.command(name="unmute", description="Server unmute all users in the bot's voice channel")
+async def unmute(interaction: discord.Interaction):
+    """Server unmute all users in the bot's current voice channel"""
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        # Check if bot is in a voice channel
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not connected to a voice channel.", ephemeral=True)
+            return
+
+        # Defer response as unmuting operations can take time
+        await interaction.response.defer()
+
+        # Get the voice channel the bot is in
+        voice_channel = interaction.guild.voice_client.channel
+        
+        # Get all members in the voice channel (excluding bots)
+        members_to_unmute = [member for member in voice_channel.members if not member.bot]
+        
+        if not members_to_unmute:
+            await interaction.followup.send("❌ No users to unmute in the voice channel.")
+            return
+
+        # Unmute all members
+        unmuted_count = 0
+        failed_unmutes = []
+        
+        for member in members_to_unmute:
+            try:
+                if member.voice.mute:  # Only unmute if currently muted
+                    await member.edit(mute=False)
+                    unmuted_count += 1
+                    logger.info(f'Unmuted user: {member.name} in guild: {interaction.guild.name}')
+            except discord.Forbidden:
+                failed_unmutes.append(member.name)
+                logger.warning(f'Failed to unmute user: {member.name} - insufficient permissions')
+            except Exception as e:
+                failed_unmutes.append(member.name)
+                logger.error(f'Error unmuting user {member.name}: {e}')
+
+        # Send response
+        if unmuted_count > 0:
+            message = f"🔊 Successfully unmuted {unmuted_count} user(s) in {voice_channel.name}"
+            if failed_unmutes:
+                message += f"\n⚠️ Failed to unmute: {', '.join(failed_unmutes)}"
+            await interaction.followup.send(message)
+        else:
+            if failed_unmutes:
+                await interaction.followup.send(f"❌ Failed to unmute any users. Check bot permissions.")
+            else:
+                await interaction.followup.send("ℹ️ All users in the voice channel are already unmuted.")
+
+    except Exception as e:
+        logger.error(f'Error in unmute command: {e}')
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
+
+@bot.tree.command(name="truth", description="Get an encouraging Bible verse")
 async def truth(interaction: discord.Interaction):
-    """Get a random Bible verse"""
+    """Get a random encouraging Bible verse"""
     try:
         verse = random.choice(BIBLE_VERSES)
-        embed = discord.Embed(title="✝️ Truth from God's Word", description=f"*{verse}*", color=0xffd700)
-        embed.set_footer(text="May this verse bless and encourage you today!")
+        embed = discord.Embed(
+            title="🙏 Truth from God's Word",
+            description=verse,
+            color=0x00ff00
+        )
         await interaction.response.send_message(embed=embed)
-        logger.info(f'Sent Bible verse to user: {interaction.user.name}')
+        logger.info(f'Truth command used by {interaction.user.name} in guild: {interaction.guild.name}')
+
     except Exception as e:
         logger.error(f'Error in truth command: {e}')
-        await interaction.response.send_message(f"❌ An error occurred: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-# New commands: mute_all & unmute_all
-@bot.tree.command(name="mute_all", description="Server-mute everyone in my current voice channel")
-async def mute_all(interaction: discord.Interaction):
-    if not is_admin(interaction.user):
-        return await interaction.response.send_message("❌ You need administrator permissions.", ephemeral=True)
-    vc = interaction.guild.voice_client
-    if not vc or not vc.channel:
-        return await interaction.response.send_message("❌ I'm not in a voice channel.", ephemeral=True)
-    await interaction.response.defer(thinking=True)
-    failed=[]
-    for m in vc.channel.members:
-        if m==bot.user: continue
-        try: await m.edit(mute=True)
-        except: failed.append(m.name)
-    msg = f"🔇 All users in **{vc.channel.name}** have been server-muted." if not failed else f"🔇 Muted everyone but failed on: {', '.join(failed)}"
-    await interaction.followup.send(msg, ephemeral=bool(failed))
+@bot.tree.command(name="help", description="Show available commands")
+async def help_command(interaction: discord.Interaction):
+    """Show available commands"""
+    try:
+        embed = discord.Embed(
+            title="🤖 Bot Commands",
+            description="Here are the available commands:",
+            color=0x00ff00
+        )
+        
+        # Admin commands
+        admin_commands = [
+            "`/join <channel>` - Join a voice channel",
+            "`/leave` - Leave the current voice channel",
+            "`/music <link>` - Play music from YouTube",
+            "`/skip` - Skip the current song",
+            "`/stop` - Stop music and clear queue",
+            "`/mute` - Server mute all users in bot's voice channel",
+            "`/unmute` - Server unmute all users in bot's voice channel"
+        ]
+        
+        # General commands
+        general_commands = [
+            "`/queue` - Show the current music queue",
+            "`/truth` - Get an encouraging Bible verse",
+            "`/help` - Show this help message"
+        ]
+        
+        embed.add_field(name="🛡️ Admin Commands", value="\n".join(admin_commands), inline=False)
+        embed.add_field(name="📖 General Commands", value="\n".join(general_commands), inline=False)
+        embed.add_field(name="ℹ️ Note", value="Admin commands require administrator permissions.", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Help command used by {interaction.user.name} in guild: {interaction.guild.name}')
 
-@bot.tree.command(name="unmute_all", description="Server-unmute everyone in my current voice channel")
-async def unmute_all(interaction: discord.Interaction):
-    if not is_admin(interaction.user):
-        return await interaction.response.send_message("❌ You need administrator permissions.", ephemeral=True)
-    vc = interaction.guild.voice_client
-    if not vc or not vc.channel:
-        return await interaction.response.send_message("❌ I'm not in a voice channel.", ephemeral=True)
-    await interaction.response.defer(thinking=True)
-    failed=[]
-    for m in vc.channel.members:
-        if m==bot.user: continue
-        try: await m.edit(mute=False)
-        except: failed.append(m.name)
-    msg = f"🔊 All users in **{vc.channel.name}** have been server-unmuted." if not failed else f"🔊 Unmuted everyone but failed on: {', '.join(failed)}"
-    await interaction.followup.send(msg, ephemeral=bool(failed))
+    except Exception as e:
+        logger.error(f'Error in help command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-@bot.event
-async def on_voice_state_update(member, before, after):
-    """Handle voice state updates"""
-    if member==bot.user and before.channel and not after.channel:
-        gid=before.channel.guild.id
-        if gid in music_players:
-            await music_players[gid].cleanup()
-            del music_players[gid]
-        logger.info(f'Bot disconnected from voice channel in guild: {before.channel.guild.name}')
+# Error handling for commands
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: Exception):
+    """Handle application command errors"""
+    logger.error(f'Command error in {interaction.command.name if interaction.command else "unknown"}: {error}')
+    
+    if not interaction.response.is_done():
+        await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
+    else:
+        await interaction.followup.send(f"❌ An error occurred: {str(error)}")
 
-
-def main():
+# Run the bot
+if __name__ == "__main__":
     try:
         bot.run(BOT_TOKEN)
-    except discord.errors.LoginFailure:
-        logger.error("Invalid bot token provided")
     except Exception as e:
-        logger.error(f"Failed to start bot: {e}")
-
-if __name__ == "__main__":
-    main()
+        logger.error(f'Failed to run bot: {e}')
