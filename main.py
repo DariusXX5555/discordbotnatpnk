@@ -114,6 +114,69 @@ JOKES = [
     "Why don't elephants use computers? They're afraid of the mouse!"
 ]
 
+# 8-ball responses
+EIGHT_BALL_RESPONSES = [
+    "It is certain", "It is decidedly so", "Without a doubt", "Yes definitely",
+    "You may rely on it", "As I see it, yes", "Most likely", "Outlook good",
+    "Yes", "Signs point to yes", "Reply hazy, try again", "Ask again later",
+    "Better not tell you now", "Cannot predict now", "Concentrate and ask again",
+    "Don't count on it", "My reply is no", "My sources say no",
+    "Outlook not so good", "Very doubtful"
+]
+
+# Would you rather questions
+WOULD_YOU_RATHER = [
+    "Would you rather have the ability to fly or be invisible?",
+    "Would you rather live in the past or the future?",
+    "Would you rather have super strength or super intelligence?",
+    "Would you rather be able to read minds or predict the future?",
+    "Would you rather never have to sleep or never have to eat?",
+    "Would you rather be famous or be the best friend of someone famous?",
+    "Would you rather live forever or live a perfect life for 50 years?",
+    "Would you rather have unlimited money or unlimited time?",
+    "Would you rather be able to speak every language or play every instrument?",
+    "Would you rather live in a world without music or without movies?",
+    "Would you rather always be hot or always be cold?",
+    "Would you rather have telepathy or teleportation?",
+    "Would you rather be the smartest person alive or the most attractive?",
+    "Would you rather have dinner with anyone from history or anyone alive today?",
+    "Would you rather be able to control fire or water?"
+]
+
+# Trivia questions with answers
+TRIVIA_QUESTIONS = [
+    {"question": "What is the capital of Australia?", "answer": "Canberra", "options": ["Sydney", "Melbourne", "Canberra", "Perth"]},
+    {"question": "Which planet is closest to the Sun?", "answer": "Mercury", "options": ["Venus", "Mercury", "Mars", "Earth"]},
+    {"question": "What is the largest ocean on Earth?", "answer": "Pacific", "options": ["Atlantic", "Indian", "Arctic", "Pacific"]},
+    {"question": "Who painted the Mona Lisa?", "answer": "Leonardo da Vinci", "options": ["Van Gogh", "Picasso", "Leonardo da Vinci", "Michelangelo"]},
+    {"question": "What is the chemical symbol for gold?", "answer": "Au", "options": ["Go", "Au", "Ag", "Al"]},
+    {"question": "Which country has the most time zones?", "answer": "France", "options": ["Russia", "USA", "China", "France"]},
+    {"question": "What is the smallest country in the world?", "answer": "Vatican City", "options": ["Monaco", "Vatican City", "San Marino", "Liechtenstein"]},
+    {"question": "How many hearts does an octopus have?", "answer": "3", "options": ["2", "3", "4", "5"]},
+    {"question": "What is the hardest natural substance on Earth?", "answer": "Diamond", "options": ["Quartz", "Diamond", "Granite", "Steel"]},
+    {"question": "Which mammal is known to have the most powerful bite?", "answer": "Hippopotamus", "options": ["Lion", "Shark", "Crocodile", "Hippopotamus"]}
+]
+
+# Quote categories
+INSPIRATIONAL_QUOTES = [
+    "The only way to do great work is to love what you do. - Steve Jobs",
+    "Life is what happens to you while you're busy making other plans. - John Lennon",
+    "The future belongs to those who believe in the beauty of their dreams. - Eleanor Roosevelt",
+    "It is during our darkest moments that we must focus to see the light. - Aristotle",
+    "The only impossible journey is the one you never begin. - Tony Robbins",
+    "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
+    "The way to get started is to quit talking and begin doing. - Walt Disney",
+    "Don't let yesterday take up too much of today. - Will Rogers",
+    "You learn more from failure than from success. Don't let it stop you. - Unknown",
+    "If you are working on something that you really care about, you don't have to be pushed. - Steve Jobs"
+]
+
+# Server activity tracking
+server_stats = {}
+
+# Rock Paper Scissors game state
+rps_games = {}
+
 @bot.event
 async def on_ready():
     """Called when bot is ready"""
@@ -697,6 +760,286 @@ async def pick(interaction: discord.Interaction, choices: str):
         logger.error(f'Error in pick command: {e}')
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
+@bot.tree.command(name="8ball", description="Ask the magic 8-ball a question")
+async def eight_ball(interaction: discord.Interaction, question: str):
+    """Ask the magic 8-ball a yes/no question"""
+    try:
+        if not question.strip():
+            await interaction.response.send_message("❌ Please ask a question!", ephemeral=True)
+            return
+        
+        response = random.choice(EIGHT_BALL_RESPONSES)
+        
+        embed = discord.Embed(
+            title="Magic 8-Ball",
+            color=0x4B0082
+        )
+        embed.add_field(name="Question", value=question, inline=False)
+        embed.add_field(name="Answer", value=f"**{response}**", inline=False)
+        embed.set_footer(text=f"Asked by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'8ball command used by {interaction.user.name}: {question}')
+    
+    except Exception as e:
+        logger.error(f'Error in 8ball command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="wouldyourather", description="Get a random 'would you rather' question")
+async def would_you_rather(interaction: discord.Interaction):
+    """Get a random 'would you rather' question"""
+    try:
+        question = random.choice(WOULD_YOU_RATHER)
+        
+        embed = discord.Embed(
+            title="Would You Rather?",
+            description=question,
+            color=0xFF1493
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Would you rather command used by {interaction.user.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in would you rather command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="trivia", description="Answer a trivia question")
+async def trivia(interaction: discord.Interaction):
+    """Get a random trivia question"""
+    try:
+        question_data = random.choice(TRIVIA_QUESTIONS)
+        question = question_data["question"]
+        correct_answer = question_data["answer"]
+        options = question_data["options"]
+        
+        # Create embed with multiple choice options
+        embed = discord.Embed(
+            title="Trivia Question",
+            description=question,
+            color=0x00FF7F
+        )
+        
+        options_text = ""
+        for i, option in enumerate(options, 1):
+            options_text += f"{i}. {option}\n"
+        
+        embed.add_field(name="Options", value=options_text, inline=False)
+        embed.add_field(name="Answer", value=f"||{correct_answer}||", inline=False)
+        embed.set_footer(text=f"Click the spoiler to reveal the answer | Requested by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Trivia command used by {interaction.user.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in trivia command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="quote", description="Get an inspirational quote")
+async def quote(interaction: discord.Interaction):
+    """Get a random inspirational quote"""
+    try:
+        quote_text = random.choice(INSPIRATIONAL_QUOTES)
+        
+        embed = discord.Embed(
+            title="Inspirational Quote",
+            description=quote_text,
+            color=0x20B2AA
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Quote command used by {interaction.user.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in quote command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="rps", description="Play Rock Paper Scissors with the bot")
+async def rock_paper_scissors(interaction: discord.Interaction, choice: str):
+    """Play Rock Paper Scissors with the bot"""
+    try:
+        valid_choices = ["rock", "paper", "scissors"]
+        user_choice = choice.lower()
+        
+        if user_choice not in valid_choices:
+            await interaction.response.send_message("❌ Please choose rock, paper, or scissors!", ephemeral=True)
+            return
+        
+        bot_choice = random.choice(valid_choices)
+        
+        # Determine winner
+        if user_choice == bot_choice:
+            result = "It's a tie!"
+            color = 0xFFFF00
+        elif (user_choice == "rock" and bot_choice == "scissors") or \
+             (user_choice == "paper" and bot_choice == "rock") or \
+             (user_choice == "scissors" and bot_choice == "paper"):
+            result = "You win!"
+            color = 0x00FF00
+        else:
+            result = "I win!"
+            color = 0xFF0000
+        
+        embed = discord.Embed(
+            title="Rock Paper Scissors",
+            color=color
+        )
+        embed.add_field(name="Your Choice", value=user_choice.capitalize(), inline=True)
+        embed.add_field(name="My Choice", value=bot_choice.capitalize(), inline=True)
+        embed.add_field(name="Result", value=f"**{result}**", inline=False)
+        embed.set_footer(text=f"Played by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'RPS command used by {interaction.user.name}: {user_choice} vs {bot_choice}')
+    
+    except Exception as e:
+        logger.error(f'Error in rps command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="serverstats", description="Show server statistics")
+async def server_stats(interaction: discord.Interaction):
+    """Show server statistics"""
+    try:
+        guild = interaction.guild
+        
+        # Count different types of channels
+        text_channels = len(guild.text_channels)
+        voice_channels = len(guild.voice_channels)
+        categories = len(guild.categories)
+        
+        # Count members
+        total_members = guild.member_count
+        online_members = sum(1 for member in guild.members if member.status != discord.Status.offline)
+        
+        # Count roles
+        total_roles = len(guild.roles)
+        
+        # Server creation date
+        created_at = guild.created_at.strftime("%B %d, %Y")
+        
+        embed = discord.Embed(
+            title=f"Server Statistics for {guild.name}",
+            color=0x7289DA
+        )
+        
+        embed.add_field(name="Members", value=f"Total: {total_members}\nOnline: {online_members}", inline=True)
+        embed.add_field(name="Channels", value=f"Text: {text_channels}\nVoice: {voice_channels}\nCategories: {categories}", inline=True)
+        embed.add_field(name="Roles", value=str(total_roles), inline=True)
+        embed.add_field(name="Created", value=created_at, inline=True)
+        embed.add_field(name="Server ID", value=str(guild.id), inline=True)
+        embed.add_field(name="Owner", value=guild.owner.mention if guild.owner else "Unknown", inline=True)
+        
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Server stats command used by {interaction.user.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in server stats command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="avatar", description="Show someone's avatar")
+async def avatar(interaction: discord.Interaction, user: discord.Member = None):
+    """Show a user's avatar"""
+    try:
+        target_user = user or interaction.user
+        
+        embed = discord.Embed(
+            title=f"{target_user.display_name}'s Avatar",
+            color=0x00CED1
+        )
+        embed.set_image(url=target_user.display_avatar.url)
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Avatar command used by {interaction.user.name} for {target_user.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in avatar command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="userinfo", description="Show information about a user")
+async def userinfo(interaction: discord.Interaction, user: discord.Member = None):
+    """Show information about a user"""
+    try:
+        target_user = user or interaction.user
+        
+        # Calculate account age
+        account_created = target_user.created_at.strftime("%B %d, %Y")
+        joined_server = target_user.joined_at.strftime("%B %d, %Y") if target_user.joined_at else "Unknown"
+        
+        # Get top role
+        top_role = target_user.top_role.name if target_user.top_role != interaction.guild.default_role else "None"
+        
+        embed = discord.Embed(
+            title=f"User Information for {target_user.display_name}",
+            color=target_user.color
+        )
+        
+        embed.add_field(name="Username", value=str(target_user), inline=True)
+        embed.add_field(name="Nickname", value=target_user.display_name, inline=True)
+        embed.add_field(name="User ID", value=str(target_user.id), inline=True)
+        embed.add_field(name="Account Created", value=account_created, inline=True)
+        embed.add_field(name="Joined Server", value=joined_server, inline=True)
+        embed.add_field(name="Top Role", value=top_role, inline=True)
+        embed.add_field(name="Status", value=str(target_user.status).title(), inline=True)
+        embed.add_field(name="Bot", value="Yes" if target_user.bot else "No", inline=True)
+        
+        if target_user.display_avatar:
+            embed.set_thumbnail(url=target_user.display_avatar.url)
+        
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Userinfo command used by {interaction.user.name} for {target_user.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in userinfo command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="poll", description="Create a simple poll")
+async def poll(interaction: discord.Interaction, question: str, option1: str, option2: str, option3: str = None, option4: str = None):
+    """Create a poll with 2-4 options"""
+    try:
+        options = [option1, option2]
+        if option3:
+            options.append(option3)
+        if option4:
+            options.append(option4)
+        
+        embed = discord.Embed(
+            title="Poll",
+            description=question,
+            color=0xFF69B4
+        )
+        
+        reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+        
+        options_text = ""
+        for i, option in enumerate(options):
+            options_text += f"{reactions[i]} {option}\n"
+        
+        embed.add_field(name="Options", value=options_text, inline=False)
+        embed.set_footer(text=f"Poll created by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        
+        # Add reactions
+        message = await interaction.original_response()
+        for i in range(len(options)):
+            await message.add_reaction(reactions[i])
+        
+        logger.info(f'Poll command used by {interaction.user.name}: {question}')
+    
+    except Exception as e:
+        logger.error(f'Error in poll command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
 @bot.tree.command(name="help", description="Show available commands")
 async def help_command(interaction: discord.Interaction):
     """Show available commands"""
@@ -732,12 +1075,26 @@ async def help_command(interaction: discord.Interaction):
             "`/fact` - Get a random fun fact",
             "`/roll <dice>` - Roll dice (e.g., 1d6, 2d20)",
             "`/coinflip` - Flip a coin",
-            "`/pick <choices>` - Pick random choice from comma-separated list"
+            "`/pick <choices>` - Pick random choice from comma-separated list",
+            "`/8ball <question>` - Ask the magic 8-ball a question",
+            "`/wouldyourather` - Get a 'would you rather' question",
+            "`/trivia` - Answer a trivia question",
+            "`/quote` - Get an inspirational quote",
+            "`/rps <choice>` - Play Rock Paper Scissors with the bot"
+        ]
+        
+        # Social commands
+        social_commands = [
+            "`/serverstats` - Show server statistics",
+            "`/avatar [user]` - Show someone's avatar",
+            "`/userinfo [user]` - Show user information",
+            "`/poll <question> <option1> <option2> [option3] [option4]` - Create a poll"
         ]
         
         embed.add_field(name="Admin Commands", value="\n".join(admin_commands), inline=False)
         embed.add_field(name="General Commands", value="\n".join(general_commands), inline=False)
         embed.add_field(name="Fun Commands", value="\n".join(fun_commands), inline=False)
+        embed.add_field(name="Social Commands", value="\n".join(social_commands), inline=False)
         embed.add_field(name="Note", value="Admin commands require administrator permissions.", inline=False)
         
         await interaction.response.send_message(embed=embed)
