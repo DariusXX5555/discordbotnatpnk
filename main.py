@@ -4,6 +4,9 @@ import asyncio
 import logging
 import os
 import random
+import aiohttp
+import json
+from datetime import datetime
 from config import BOT_TOKEN, FFMPEG_OPTIONS
 from music_player import MusicPlayer
 from utils import is_admin, setup_logging, create_error_embed, create_info_embed, create_success_embed
@@ -66,6 +69,49 @@ BIBLE_VERSES = [
     "The fear of the Lord is the beginning of wisdom, and knowledge of the Holy One is understanding. - Proverbs 9:10",
     "God is faithful, who will not allow you to be tempted beyond what you are able. - 1 Corinthians 10:13",
     "Therefore encourage one another and build each other up, just as in fact you are doing. - 1 Thessalonians 5:11"
+]
+
+# Fun facts for random facts command
+FUN_FACTS = [
+    "A group of flamingos is called a 'flamboyance'.",
+    "Honey never spoils. Archaeologists have found pots of honey in ancient Egyptian tombs that are over 3,000 years old and still perfectly edible.",
+    "Octopuses have three hearts and blue blood.",
+    "A cloud can weigh more than a million pounds.",
+    "Bananas are berries, but strawberries aren't.",
+    "The human brain uses about 20% of the body's total energy.",
+    "There are more possible games of chess than atoms in the observable universe.",
+    "A group of owls is called a 'parliament'.",
+    "The shortest war in history lasted only 38-45 minutes.",
+    "A shrimp's heart is in its head.",
+    "The Great Wall of China isn't visible from space without aid.",
+    "Dolphins have names for each other.",
+    "A group of pandas is called an 'embarrassment'.",
+    "The human body produces about 25 million new cells every second.",
+    "Lightning strikes the Earth about 100 times per second.",
+    "A group of crows is called a 'murder'.",
+    "The average person walks past 36 murderers in their lifetime.",
+    "A group of jellyfish is called a 'smack'.",
+    "The heart of a blue whale is so large that a human could crawl through its arteries.",
+    "A group of unicorns is called a 'blessing'."
+]
+
+# Jokes for the joke command
+JOKES = [
+    "Why don't scientists trust atoms? Because they make up everything!",
+    "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+    "Why don't eggs tell jokes? They'd crack each other up!",
+    "What do you call a fake noodle? An impasta!",
+    "Why did the scarecrow win an award? He was outstanding in his field!",
+    "What do you call a bear with no teeth? A gummy bear!",
+    "Why don't skeletons fight each other? They don't have the guts!",
+    "What do you call a dinosaur that crashes his car? Tyrannosaurus Wrecks!",
+    "Why did the math book look so sad? Because it had too many problems!",
+    "What do you call a sleeping bull? A bulldozer!",
+    "Why don't scientists trust stairs? Because they're always up to something!",
+    "What do you call a fish wearing a crown? A king fish!",
+    "Why did the cookie go to the doctor? Because it felt crumbly!",
+    "What do you call a pig that does karate? A pork chop!",
+    "Why don't elephants use computers? They're afraid of the mouse!"
 ]
 
 @bot.event
@@ -453,7 +499,7 @@ async def truth(interaction: discord.Interaction):
     try:
         verse = random.choice(BIBLE_VERSES)
         embed = discord.Embed(
-            title="🙏 Truth from God's Word",
+            title="Truth from God's Word",
             description=verse,
             color=0x00ff00
         )
@@ -464,12 +510,199 @@ async def truth(interaction: discord.Interaction):
         logger.error(f'Error in truth command: {e}')
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
+@bot.tree.command(name="weather", description="Get current weather for a city")
+async def weather(interaction: discord.Interaction, city: str):
+    """Get current weather information for a specified city"""
+    try:
+        await interaction.response.defer()
+        
+        # OpenWeatherMap API (free tier)
+        # Note: You'll need to get a free API key from openweathermap.org
+        api_key = os.getenv('OPENWEATHER_API_KEY')
+        if not api_key:
+            await interaction.followup.send("❌ Weather service is not configured. Please ask the bot owner to set up the weather API key.")
+            return
+        
+        async with aiohttp.ClientSession() as session:
+            url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Extract weather information
+                    temp = data['main']['temp']
+                    feels_like = data['main']['feels_like']
+                    humidity = data['main']['humidity']
+                    description = data['weather'][0]['description'].title()
+                    city_name = data['name']
+                    country = data['sys']['country']
+                    
+                    # Create weather embed
+                    embed = discord.Embed(
+                        title=f"Weather in {city_name}, {country}",
+                        color=0x87CEEB
+                    )
+                    embed.add_field(name="Temperature", value=f"{temp}°C", inline=True)
+                    embed.add_field(name="Feels Like", value=f"{feels_like}°C", inline=True)
+                    embed.add_field(name="Humidity", value=f"{humidity}%", inline=True)
+                    embed.add_field(name="Description", value=description, inline=False)
+                    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+                    
+                    await interaction.followup.send(embed=embed)
+                    logger.info(f'Weather command used by {interaction.user.name} for {city}')
+                else:
+                    await interaction.followup.send(f"❌ Could not find weather information for '{city}'. Please check the city name and try again.")
+    
+    except Exception as e:
+        logger.error(f'Error in weather command: {e}')
+        await interaction.followup.send(f"❌ An error occurred while fetching weather data: {str(e)}")
+
+@bot.tree.command(name="joke", description="Get a random joke")
+async def joke(interaction: discord.Interaction):
+    """Get a random joke to lighten the mood"""
+    try:
+        joke_text = random.choice(JOKES)
+        embed = discord.Embed(
+            title="Random Joke",
+            description=joke_text,
+            color=0xFFD700
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Joke command used by {interaction.user.name} in guild: {interaction.guild.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in joke command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="fact", description="Get a random fun fact")
+async def fact(interaction: discord.Interaction):
+    """Get a random fun fact"""
+    try:
+        fact_text = random.choice(FUN_FACTS)
+        embed = discord.Embed(
+            title="Did You Know?",
+            description=fact_text,
+            color=0x9932CC
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Fact command used by {interaction.user.name} in guild: {interaction.guild.name}')
+    
+    except Exception as e:
+        logger.error(f'Error in fact command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="roll", description="Roll dice (e.g., 1d6, 2d20)")
+async def roll(interaction: discord.Interaction, dice: str = "1d6"):
+    """Roll dice with specified format (e.g., 1d6, 2d20)"""
+    try:
+        # Parse dice format (e.g., "2d20" -> 2 dice with 20 sides each)
+        if 'd' not in dice.lower():
+            await interaction.response.send_message("❌ Invalid dice format. Use format like '1d6' or '2d20'.", ephemeral=True)
+            return
+        
+        parts = dice.lower().split('d')
+        if len(parts) != 2:
+            await interaction.response.send_message("❌ Invalid dice format. Use format like '1d6' or '2d20'.", ephemeral=True)
+            return
+        
+        try:
+            num_dice = int(parts[0]) if parts[0] else 1
+            num_sides = int(parts[1])
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid dice format. Use format like '1d6' or '2d20'.", ephemeral=True)
+            return
+        
+        # Validate input
+        if num_dice < 1 or num_dice > 20:
+            await interaction.response.send_message("❌ Number of dice must be between 1 and 20.", ephemeral=True)
+            return
+        
+        if num_sides < 2 or num_sides > 100:
+            await interaction.response.send_message("❌ Number of sides must be between 2 and 100.", ephemeral=True)
+            return
+        
+        # Roll the dice
+        rolls = [random.randint(1, num_sides) for _ in range(num_dice)]
+        total = sum(rolls)
+        
+        # Create result embed
+        embed = discord.Embed(
+            title=f"Rolling {num_dice}d{num_sides}",
+            color=0xFF6347
+        )
+        
+        if num_dice == 1:
+            embed.add_field(name="Result", value=f"**{rolls[0]}**", inline=False)
+        else:
+            embed.add_field(name="Individual Rolls", value=f"{', '.join(map(str, rolls))}", inline=False)
+            embed.add_field(name="Total", value=f"**{total}**", inline=False)
+        
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Roll command used by {interaction.user.name}: {dice} -> {rolls}')
+    
+    except Exception as e:
+        logger.error(f'Error in roll command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="coinflip", description="Flip a coin")
+async def coinflip(interaction: discord.Interaction):
+    """Flip a coin and get heads or tails"""
+    try:
+        result = random.choice(["Heads", "Tails"])
+        
+        embed = discord.Embed(
+            title="Coin Flip",
+            description=f"**{result}**",
+            color=0xFFD700
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Coinflip command used by {interaction.user.name}: {result}')
+    
+    except Exception as e:
+        logger.error(f'Error in coinflip command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="pick", description="Pick a random choice from a list")
+async def pick(interaction: discord.Interaction, choices: str):
+    """Pick a random choice from a comma-separated list"""
+    try:
+        # Split choices by comma and clean them up
+        choice_list = [choice.strip() for choice in choices.split(',') if choice.strip()]
+        
+        if len(choice_list) < 2:
+            await interaction.response.send_message("❌ Please provide at least 2 choices separated by commas.", ephemeral=True)
+            return
+        
+        if len(choice_list) > 20:
+            await interaction.response.send_message("❌ Please provide no more than 20 choices.", ephemeral=True)
+            return
+        
+        selected = random.choice(choice_list)
+        
+        embed = discord.Embed(
+            title="Random Choice",
+            description=f"I pick: **{selected}**",
+            color=0x00CED1
+        )
+        embed.add_field(name="Choices", value=f"{', '.join(choice_list)}", inline=False)
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+        logger.info(f'Pick command used by {interaction.user.name}: {selected} from {choice_list}')
+    
+    except Exception as e:
+        logger.error(f'Error in pick command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
 @bot.tree.command(name="help", description="Show available commands")
 async def help_command(interaction: discord.Interaction):
     """Show available commands"""
     try:
         embed = discord.Embed(
-            title="🤖 Bot Commands",
+            title="Bot Commands",
             description="Here are the available commands:",
             color=0x00ff00
         )
@@ -492,9 +725,20 @@ async def help_command(interaction: discord.Interaction):
             "`/help` - Show this help message"
         ]
         
-        embed.add_field(name="🛡️ Admin Commands", value="\n".join(admin_commands), inline=False)
-        embed.add_field(name="📖 General Commands", value="\n".join(general_commands), inline=False)
-        embed.add_field(name="ℹ️ Note", value="Admin commands require administrator permissions.", inline=False)
+        # Fun commands
+        fun_commands = [
+            "`/weather <city>` - Get current weather for a city",
+            "`/joke` - Get a random joke",
+            "`/fact` - Get a random fun fact",
+            "`/roll <dice>` - Roll dice (e.g., 1d6, 2d20)",
+            "`/coinflip` - Flip a coin",
+            "`/pick <choices>` - Pick random choice from comma-separated list"
+        ]
+        
+        embed.add_field(name="Admin Commands", value="\n".join(admin_commands), inline=False)
+        embed.add_field(name="General Commands", value="\n".join(general_commands), inline=False)
+        embed.add_field(name="Fun Commands", value="\n".join(fun_commands), inline=False)
+        embed.add_field(name="Note", value="Admin commands require administrator permissions.", inline=False)
         
         await interaction.response.send_message(embed=embed)
         logger.info(f'Help command used by {interaction.user.name} in guild: {interaction.guild.name}')
