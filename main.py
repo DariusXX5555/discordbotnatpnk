@@ -177,6 +177,9 @@ server_stats = {}
 # Rock Paper Scissors game state
 rps_games = {}
 
+# Excluded users from mute/unmute (per guild)
+excluded_users = {}
+
 @bot.event
 async def on_ready():
     """Called when bot is ready"""
@@ -457,12 +460,22 @@ async def mute(interaction: discord.Interaction):
             await interaction.followup.send("❌ No users to mute in the voice channel.")
             return
 
-        # Mute all members
+        # Get excluded users for this guild
+        guild_id = interaction.guild.id
+        guild_excluded = excluded_users.get(guild_id, set())
+
+        # Mute all members (excluding excluded users)
         muted_count = 0
+        excluded_count = 0
         failed_mutes = []
         
         for member in members_to_mute:
             try:
+                # Check if user is excluded
+                if member.id in guild_excluded:
+                    excluded_count += 1
+                    continue
+                    
                 if not member.voice.mute:  # Only mute if not already muted
                     await member.edit(mute=True)
                     muted_count += 1
@@ -477,11 +490,15 @@ async def mute(interaction: discord.Interaction):
         # Send response
         if muted_count > 0:
             message = f"🔇 Successfully muted {muted_count} user(s) in {voice_channel.name}"
+            if excluded_count > 0:
+                message += f"\n🛡️ Excluded {excluded_count} user(s) from muting"
             if failed_mutes:
                 message += f"\n⚠️ Failed to mute: {', '.join(failed_mutes)}"
             await interaction.followup.send(message)
         else:
-            if failed_mutes:
+            if excluded_count > 0:
+                await interaction.followup.send(f"ℹ️ All users in the voice channel are either already muted or excluded from muting.")
+            elif failed_mutes:
                 await interaction.followup.send(f"❌ Failed to mute any users. Check bot permissions.")
             else:
                 await interaction.followup.send("ℹ️ All users in the voice channel are already muted.")
@@ -520,12 +537,22 @@ async def unmute(interaction: discord.Interaction):
             await interaction.followup.send("❌ No users to unmute in the voice channel.")
             return
 
-        # Unmute all members
+        # Get excluded users for this guild
+        guild_id = interaction.guild.id
+        guild_excluded = excluded_users.get(guild_id, set())
+
+        # Unmute all members (excluding excluded users)
         unmuted_count = 0
+        excluded_count = 0
         failed_unmutes = []
         
         for member in members_to_unmute:
             try:
+                # Check if user is excluded
+                if member.id in guild_excluded:
+                    excluded_count += 1
+                    continue
+                    
                 if member.voice.mute:  # Only unmute if currently muted
                     await member.edit(mute=False)
                     unmuted_count += 1
@@ -540,11 +567,15 @@ async def unmute(interaction: discord.Interaction):
         # Send response
         if unmuted_count > 0:
             message = f"🔊 Successfully unmuted {unmuted_count} user(s) in {voice_channel.name}"
+            if excluded_count > 0:
+                message += f"\n🛡️ Excluded {excluded_count} user(s) from unmuting"
             if failed_unmutes:
                 message += f"\n⚠️ Failed to unmute: {', '.join(failed_unmutes)}"
             await interaction.followup.send(message)
         else:
-            if failed_unmutes:
+            if excluded_count > 0:
+                await interaction.followup.send(f"ℹ️ All users in the voice channel are either already unmuted or excluded from unmuting.")
+            elif failed_unmutes:
                 await interaction.followup.send(f"❌ Failed to unmute any users. Check bot permissions.")
             else:
                 await interaction.followup.send("ℹ️ All users in the voice channel are already unmuted.")
@@ -555,6 +586,107 @@ async def unmute(interaction: discord.Interaction):
             await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
         else:
             await interaction.followup.send(f"❌ An error occurred: {str(e)}")
+
+@bot.tree.command(name="exclude", description="Manage users excluded from mute/unmute commands")
+async def exclude(interaction: discord.Interaction, action: str, user: discord.Member = None):
+    """Manage users excluded from mute/unmute commands"""
+    try:
+        # Check if user is admin
+        if not is_admin(interaction.user):
+            await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        
+        # Initialize guild excluded users if not exists
+        if guild_id not in excluded_users:
+            excluded_users[guild_id] = set()
+        
+        guild_excluded = excluded_users[guild_id]
+        
+        if action.lower() == "add":
+            if not user:
+                await interaction.response.send_message("❌ Please specify a user to add to the exclusion list.", ephemeral=True)
+                return
+            
+            if user.id in guild_excluded:
+                await interaction.response.send_message(f"❌ {user.display_name} is already excluded from mute/unmute commands.", ephemeral=True)
+                return
+            
+            guild_excluded.add(user.id)
+            embed = discord.Embed(
+                title="✅ User Added to Exclusion List",
+                description=f"{user.display_name} has been added to the exclusion list and will not be affected by mute/unmute commands.",
+                color=0x00FF00
+            )
+            await interaction.response.send_message(embed=embed)
+            logger.info(f'User {user.name} added to exclusion list by {interaction.user.name} in guild: {interaction.guild.name}')
+        
+        elif action.lower() == "remove":
+            if not user:
+                await interaction.response.send_message("❌ Please specify a user to remove from the exclusion list.", ephemeral=True)
+                return
+            
+            if user.id not in guild_excluded:
+                await interaction.response.send_message(f"❌ {user.display_name} is not in the exclusion list.", ephemeral=True)
+                return
+            
+            guild_excluded.remove(user.id)
+            embed = discord.Embed(
+                title="✅ User Removed from Exclusion List",
+                description=f"{user.display_name} has been removed from the exclusion list and will now be affected by mute/unmute commands.",
+                color=0x00FF00
+            )
+            await interaction.response.send_message(embed=embed)
+            logger.info(f'User {user.name} removed from exclusion list by {interaction.user.name} in guild: {interaction.guild.name}')
+        
+        elif action.lower() == "list":
+            if not guild_excluded:
+                await interaction.response.send_message("📋 No users are currently excluded from mute/unmute commands.", ephemeral=True)
+                return
+            
+            # Get user objects for excluded IDs
+            excluded_names = []
+            for user_id in guild_excluded:
+                member = interaction.guild.get_member(user_id)
+                if member:
+                    excluded_names.append(member.display_name)
+                else:
+                    excluded_names.append(f"Unknown User (ID: {user_id})")
+            
+            embed = discord.Embed(
+                title="🛡️ Excluded Users",
+                description="The following users are excluded from mute/unmute commands:",
+                color=0x4169E1
+            )
+            embed.add_field(name="Excluded Users", value="\n".join(excluded_names), inline=False)
+            embed.set_footer(text=f"Total excluded users: {len(excluded_names)}")
+            
+            await interaction.response.send_message(embed=embed)
+            logger.info(f'Exclusion list viewed by {interaction.user.name} in guild: {interaction.guild.name}')
+        
+        elif action.lower() == "clear":
+            if not guild_excluded:
+                await interaction.response.send_message("❌ No users are currently excluded.", ephemeral=True)
+                return
+            
+            excluded_count = len(guild_excluded)
+            guild_excluded.clear()
+            
+            embed = discord.Embed(
+                title="✅ Exclusion List Cleared",
+                description=f"All {excluded_count} users have been removed from the exclusion list.",
+                color=0x00FF00
+            )
+            await interaction.response.send_message(embed=embed)
+            logger.info(f'Exclusion list cleared by {interaction.user.name} in guild: {interaction.guild.name}')
+        
+        else:
+            await interaction.response.send_message("❌ Invalid action. Use: `add`, `remove`, `list`, or `clear`", ephemeral=True)
+
+    except Exception as e:
+        logger.error(f'Error in exclude command: {e}')
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 @bot.tree.command(name="truth", description="Get an encouraging Bible verse")
 async def truth(interaction: discord.Interaction):
@@ -1058,7 +1190,8 @@ async def help_command(interaction: discord.Interaction):
             "`/skip` - Skip the current song",
             "`/stop` - Stop music and clear queue",
             "`/mute` - Server mute all users in bot's voice channel",
-            "`/unmute` - Server unmute all users in bot's voice channel"
+            "`/unmute` - Server unmute all users in bot's voice channel",
+            "`/exclude <action> [user]` - Manage excluded users (add/remove/list/clear)"
         ]
         
         # General commands
