@@ -8,6 +8,8 @@ import sys
 import urllib.request
 import tarfile
 import shutil
+from keep_alive import keep_alive
+keep_alive()
 
 def download_ffmpeg():
     """Download FFmpeg for Railway deployment"""
